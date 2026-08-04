@@ -73,7 +73,7 @@
     }
 
     // 4. GeoJSON 데이터 로드
-    fetch('/static/ticks_countries.geojson')
+    fetch('static/ticks_countries.geojson')
       .then(res => {
         if (!res.ok) throw new Error("파일을 찾을 수 없습니다.");
         return res.json();
