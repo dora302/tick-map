@@ -1,157 +1,179 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
-  <title>대표 질환별 전 세계 진드기 역학 지도</title>
-  <!-- Leaflet.js CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <style>
-    body { margin: 0; padding: 0; }
-    #map { width: 100vw; height: 100vh; }
-    .info-legend {
-      background: white;
-      padding: 12px 16px;
-      border-radius: 8px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.15);
-      font-size: 13px;
-      line-height: 1.6;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    }
-    .legend-title {
-      font-weight: bold;
-      font-size: 14px;
-      margin-bottom: 8px;
-      color: #1f1f1f;
-    }
-    .legend-item { display: flex; align-items: center; margin-bottom: 4px; }
-    .color-box { width: 14px; height: 14px; display: inline-block; margin-right: 8px; border-radius: 3px; }
-  </style>
+<meta charset="UTF-8">
+<title>대표 질환별 전 세계 진드기 역학 지도</title>
+<!-- Leaflet.js CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+body { margin: 0; padding: 0; }
+#map { width: 100vw; height: 100vh; }
+.info-legend {
+  background: white;
+  padding: 12px 16px;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+  font-size: 13px;
+  line-height: 1.6;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+.legend-title {
+  font-weight: bold;
+  font-size: 14px;
+  margin-bottom: 8px;
+  color: #1f1f1f;
+}
+.legend-item { display: flex; align-items: center; margin-bottom: 4px; }
+.color-box { width: 14px; height: 14px; display: inline-block; margin-right: 8px; border-radius: 3px; }
+</style>
 </head>
 <body>
+<div id="map"></div>
 
-  <div id="map"></div>
+<!-- Leaflet.js JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// 1. 지도 초기화
+const map = L.map('map').setView([20, 0], 2);
 
-  <!-- Leaflet.js JS -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script>
-    // 1. 지도 초기화
-    const map = L.map('map').setView([20, 0], 2);
+// 2. OpenStreetMap 타일 레이어
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 18,
+  attribution: '© OpenStreetMap'
+}).addTo(map);
 
-    // 2. OpenStreetMap 타일 레이어
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 18,
-      attribution: '© OpenStreetMap'
+// 3. 🎨 [핵심] 한글/영문 질환명을 완벽 감지하여 색상을 결정하는 스마트 함수
+function getDiseaseColor(disease, riskLevel) {
+  if (!disease) return '#e0e0e0';
+  const isHigh = riskLevel === 'HIGH';
+  const d = disease.toLowerCase(); // 소문자로 변환하여 영문 감지
+
+  // ① 쯔쯔가무시증 계열 (레드)
+  if (d.includes('쯔쯔가무시') || d.includes('scrub')) {
+    return isHigh ? '#d9363e' : '#ff7875';
+  }
+  // ② 라임병 계열 (초록)
+  if (d.includes('라임') || d.includes('lyme')) {
+    return isHigh ? '#27a745' : '#8dd79f';
+  }
+  // ③ 반점열 / 홍반열 / 티푸스 계열 (보라)
+  if (d.includes('반점열') || d.includes('티푸스') || d.includes('홍반열') ||
+      d.includes('spotted') || d.includes('rmsf') || d.includes('msf')) {
+    return isHigh ? '#722ed1' : '#b37feb';
+  }
+  // ④ 진드기열 / SFTS 계열 (주황)
+  if (d.includes('sfts') || d.includes('진드기열') || d.includes('fever') || d.includes('tick-bite')) {
+    return isHigh ? '#d96b00' : '#ffbb96';
+  }
+  // ⑤ 분류 예외 예비 색상 (기본 주황 계열)
+  return isHigh ? '#ffa940' : '#ffd591';
+}
+
+// ── ⭐ 신규: URL 쿼리 파라미터(?country=ISO3코드)로 특정 국가에 지도 포커스 ──
+// 예: index.html?country=JPN  ->  일본으로 지도 이동 + 팝업 자동 오픈
+// feature.properties['ISO3166-1-Alpha-3'] 값과 대소문자 구분 없이 매칭함.
+let countryLayerMap = {}; // ISO3 코드 -> Leaflet layer 참조 저장
+
+function focusCountryFromURL() {
+  const params = new URLSearchParams(window.location.search);
+  const countryCode = params.get('country');
+  if (!countryCode) return;
+
+  const target = countryLayerMap[countryCode.toUpperCase()];
+  if (!target) {
+    console.warn(`[focusCountryFromURL] 해당 국가 코드를 찾을 수 없습니다: ${countryCode}`);
+    return;
+  }
+
+  // 국가 경계에 맞춰 지도 이동/줌
+  map.fitBounds(target.getBounds(), { maxZoom: 6, padding: [40, 40] });
+  target.openPopup();
+}
+
+// 4. GeoJSON 데이터 로드
+fetch('static/ticks_countries.geojson')
+  .then(res => {
+    if (!res.ok) throw new Error("파일을 찾을 수 없습니다.");
+    return res.json();
+  })
+  .then(data => {
+    L.geoJSON(data, {
+      // 국가별 색상 및 스타일 칠하기
+      style: function(feature) {
+        const props = feature.properties;
+        // 데이터가 없는 미등록 국가 (밝은 회색)
+        if (!props.has_tick_data) {
+          return {
+            fillColor: '#f0f0f0',
+            weight: 0.5,
+            color: '#ffffff',
+            fillOpacity: 0.3
+          };
+        }
+        // 등록된 국가는 스마트 색상 매핑 함수 호출
+        const color = getDiseaseColor(props.disease, props.risk_level);
+        return {
+          fillColor: color,
+          weight: 1.2,
+          opacity: 1,
+          color: '#ffffff',
+          fillOpacity: 0.75
+        };
+      },
+      // 국가 클릭 시 팝업 띄우기
+      onEachFeature: function(feature, layer) {
+        const props = feature.properties;
+
+        // ⭐ ISO3 코드 -> layer 매핑 저장 (URL 파라미터로 나중에 찾기 위함)
+        const iso3 = props['ISO3166-1-Alpha-3'];
+        if (iso3) {
+          countryLayerMap[iso3.toUpperCase()] = layer;
+        }
+
+        if (props.has_tick_data) {
+          const escharBadge = props.eschar_likely
+            ? '<span style="color:#d9363e; font-weight:bold;">🔴 가피(Eschar) 형성</span>'
+            : '<span style="color:#1890ff; font-weight:bold;">🔵 가피 없음 (과녁형 발진 등)</span>';
+
+          layer.bindPopup(`
+            <div style="padding: 4px; min-width: 220px;">
+              <h3 style="margin:0 0 6px 0; color:#111;">${props.name}</h3>
+              <div style="background:#f5f5f5; padding:6px; border-radius:4px; margin-bottom:8px;">
+                <small style="color:#8c8c8c; display:block;">대표 감염 질환</small>
+                <b style="color:#262626; font-size:14px;">🦠 ${props.disease}</b>
+              </div>
+              <p style="margin:4px 0;"><b>우점 진드기:</b> ${props.primary_tick || '정보 없음'}</p>
+              <p style="margin:4px 0;"><b>가피 유무:</b> ${escharBadge}</p>
+              <p style="margin:4px 0; color:#595959; font-size:12px;"><b>특징:</b> ${props.eschar_desc}</p>
+              <p style="margin:4px 0;"><b>잠복기:</b> ${props.incubation}</p>
+            </div>
+          `);
+        }
+      }
     }).addTo(map);
 
-    // 3. 🎨 [핵심] 한글/영문 질환명을 완벽 감지하여 색상을 결정하는 스마트 함수
-    function getDiseaseColor(disease, riskLevel) {
-      if (!disease) return '#e0e0e0';
+    // ⭐ GeoJSON 로드 + 레이어 매핑이 다 끝난 뒤에 URL 파라미터 처리
+    focusCountryFromURL();
+  })
+  .catch(err => console.error("GeoJSON 로드 실패:", err));
 
-      const isHigh = riskLevel === 'HIGH';
-      const d = disease.toLowerCase(); // 소문자로 변환하여 영문 감지
-
-      // ① 쯔쯔가무시증 계열 (레드)
-      if (d.includes('쯔쯔가무시') || d.includes('scrub')) {
-        return isHigh ? '#d9363e' : '#ff7875';
-      }
-      // ② 라임병 계열 (초록)
-      if (d.includes('라임') || d.includes('lyme')) {
-        return isHigh ? '#27a745' : '#8dd79f';
-      }
-      // ③ 반점열 / 홍반열 / 티푸스 계열 (보라)
-      if (d.includes('반점열') || d.includes('티푸스') || d.includes('홍반열') || 
-          d.includes('spotted') || d.includes('rmsf') || d.includes('msf')) {
-        return isHigh ? '#722ed1' : '#b37feb';
-      }
-      // ④ 진드기열 / SFTS 계열 (주황)
-      if (d.includes('sfts') || d.includes('진드기열') || d.includes('fever') || d.includes('tick-bite')) {
-        return isHigh ? '#d96b00' : '#ffbb96';
-      }
-
-      // ⑤ 분류 예외 예비 색상 (기본 주황 계열)
-      return isHigh ? '#ffa940' : '#ffd591';
-    }
-
-    // 4. GeoJSON 데이터 로드
-    fetch('static/ticks_countries.geojson')
-      .then(res => {
-        if (!res.ok) throw new Error("파일을 찾을 수 없습니다.");
-        return res.json();
-      })
-      .then(data => {
-        L.geoJSON(data, {
-          
-          // 국가별 색상 및 스타일 칠하기
-          style: function(feature) {
-            const props = feature.properties;
-
-            // 데이터가 없는 미등록 국가 (밝은 회색)
-            if (!props.has_tick_data) {
-              return { 
-                fillColor: '#f0f0f0', 
-                weight: 0.5, 
-                color: '#ffffff', 
-                fillOpacity: 0.3 
-              };
-            }
-
-            // 등록된 국가는 스마트 색상 매핑 함수 호출
-            const color = getDiseaseColor(props.disease, props.risk_level);
-
-            return {
-              fillColor: color,
-              weight: 1.2,
-              opacity: 1,
-              color: '#ffffff',
-              fillOpacity: 0.75
-            };
-          },
-
-          // 국가 클릭 시 팝업 띄우기
-          onEachFeature: function(feature, layer) {
-            const props = feature.properties;
-
-            if (props.has_tick_data) {
-              const escharBadge = props.eschar_likely 
-                ? '<span style="color:#d9363e; font-weight:bold;">🔴 가피(Eschar) 형성</span>' 
-                : '<span style="color:#1890ff; font-weight:bold;">🔵 가피 없음 (과녁형 발진 등)</span>';
-
-              layer.bindPopup(`
-                <div style="padding: 4px; min-width: 220px;">
-                  <h3 style="margin:0 0 6px 0; color:#111;">${props.name}</h3>
-                  <div style="background:#f5f5f5; padding:6px; border-radius:4px; margin-bottom:8px;">
-                    <small style="color:#8c8c8c; display:block;">대표 감염 질환</small>
-                    <b style="color:#262626; font-size:14px;">🦠 ${props.disease}</b>
-                  </div>
-                  <p style="margin:4px 0;"><b>우점 진드기:</b> ${props.primary_tick || '정보 없음'}</p>
-                  <p style="margin:4px 0;"><b>가피 유무:</b> ${escharBadge}</p>
-                  <p style="margin:4px 0; color:#595959; font-size:12px;"><b>특징:</b> ${props.eschar_desc}</p>
-                  <p style="margin:4px 0;"><b>잠복기:</b> ${props.incubation}</p>
-                </div>
-              `);
-            }
-          }
-        }).addTo(map);
-      })
-      .catch(err => console.error("GeoJSON 로드 실패:", err));
-
-    // 5. 🗺️ 범례 (Legend) 제어
-    const legend = L.control({ position: 'bottomright' });
-    legend.onAdd = function () {
-      const div = L.DomUtil.create('div', 'info-legend');
-      div.innerHTML = `
-        <div class="legend-title">🦠 대표 질환별 구분</div>
-        <div class="legend-item"><span class="color-box" style="background:#d9363e;"></span><b>쯔쯔가무시증</b></div>
-        <div class="legend-item"><span class="color-box" style="background:#27a745;"></span><b>라임병</b></div>
-        <div class="legend-item"><span class="color-box" style="background:#722ed1;"></span><b>반점열 / 티푸스 계열</b></div>
-        <div class="legend-item"><span class="color-box" style="background:#d96b00;"></span><b>진드기열 / SFTS 계열</b></div>
-        <hr style="margin:8px 0; border:0; border-top:1px solid #eee;">
-        <small style="color:#666;">* 진한 색: High Risk / 옅은 색: Medium Risk</small>
-      `;
-      return div;
-    };
-    legend.addTo(map);
-  </script>
+// 5. 🗺️ 범례 (Legend) 제어
+const legend = L.control({ position: 'bottomright' });
+legend.onAdd = function () {
+  const div = L.DomUtil.create('div', 'info-legend');
+  div.innerHTML = `
+    <div class="legend-title">🦠 대표 질환별 구분</div>
+    <div class="legend-item"><span class="color-box" style="background:#d9363e;"></span><b>쯔쯔가무시증</b></div>
+    <div class="legend-item"><span class="color-box" style="background:#27a745;"></span><b>라임병</b></div>
+    <div class="legend-item"><span class="color-box" style="background:#722ed1;"></span><b>반점열 / 티푸스 계열</b></div>
+    <div class="legend-item"><span class="color-box" style="background:#d96b00;"></span><b>진드기열 / SFTS 계열</b></div>
+    <hr style="margin:8px 0; border:0; border-top:1px solid #eee;">
+    <small style="color:#666;">* 진한 색: High Risk / 옅은 색: Medium Risk</small>
+  `;
+  return div;
+};
+legend.addTo(map);
+</script>
 
 </body>
 </html>
